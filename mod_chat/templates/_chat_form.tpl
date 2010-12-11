@@ -4,7 +4,7 @@
               delegate="mod_chat" %}
   <form id="chat-form" 
               method="post" action="postback">
-    <div class="clearfix zp-100" style="height: 32px; border: 1px solid green;">
+    <div class="clearfix zp-100" style="height: 32px; border: 1px solid blue;">
       <div class="left zp-10">
           <label for="chat">Chat</label>
       </div>

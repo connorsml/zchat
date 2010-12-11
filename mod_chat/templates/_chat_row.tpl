@@ -1,1 +1,1 @@
-<li>{{name}}: {{chat}}</li>
+<li>{{name}}: {{chat|escape}}</li>

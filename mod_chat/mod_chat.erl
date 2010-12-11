@@ -58,7 +58,7 @@ handle_cast({{chat_done, Chat, Name}, Ctx}, State=#state{context=Context}) ->
     case State#state.chat_boxes of
         [] -> nop;
         ChatBoxes ->
-            case catch z_template:render_to_iolist("_chat_row.tpl", [{chat, z_utils:js_escape(Chat)}, {name, Name}], Ctx) of
+            case catch z_template:render_to_iolist("_chat_row.tpl", [{chat, Chat}, {name, Name}], Ctx) of
                 {error, {template_not_found,"_chat_row.tpl",enoent}} ->
                     % We can get a template_not_found error when the system is still starting.
                     nop;
