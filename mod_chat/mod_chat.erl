@@ -36,6 +36,7 @@
 
 -include_lib("zotonic.hrl").
 
+-record(chat_box, {pid, name}).
 -record(state, {context, chat_boxes=[]}).
 
 %%====================================================================
@@ -46,18 +47,23 @@
 start_link(Args) when is_list(Args) ->
     gen_server:start_link(?MODULE, Args, []).
 
-handle_call({{add_chat_box, Pid}, _Ctx}, _From, State) ->
-    ?DEBUG("Adding chat.."),
-    Pids = lists:filter(fun erlang:is_process_alive/1, [Pid|State#state.chat_boxes]),
-    {reply, ok, State#state{chat_boxes=Pids}};
+handle_call({{add_chat_box, ChatBox}, Ctx}, _From, State) ->
+    ?PRINT(ChatBox),
+    ChatBoxes = [ X || X <- [ChatBox|State#state.chat_boxes], is_process_alive(X#chat_box.pid)],
+    %% add new chat box to all
+    render_userlist_row([{name, ChatBox#chat_box.name}], ChatBoxes, Ctx),
+    %% add existing chat boxes to new
+    [ render_userlist_row([{name, CBox#chat_box.name}], [ChatBox], Ctx) || CBox <- tl(ChatBoxes) ],
+    {reply, ok, State#state{chat_boxes=ChatBoxes}};
 
 handle_call(Message, _From, State) ->
     {stop, {unknown_call, Message}, State}.
 
-handle_cast({{chat_done, Chat, Name}, Ctx}, State=#state{context=Context}) ->
+handle_cast({{chat_done, Chat}, Ctx}, State) ->
     case State#state.chat_boxes of
         [] -> nop;
         ChatBoxes ->
+	    [Name] = [ X#chat_box.name || X <- ChatBoxes, X#chat_box.pid == Ctx#context.page_pid ],
             case catch z_template:render_to_iolist("_chat_row.tpl", [{chat, Chat}, {name, Name}], Ctx) of
                 {error, {template_not_found,"_chat_row.tpl",enoent}} ->
                     % We can get a template_not_found error when the system is still starting.
@@ -73,7 +79,7 @@ handle_cast({{chat_done, Chat, Name}, Ctx}, State=#state{context=Context}) ->
                                 z_session_page:add_script(["$('#chat').val(\"\");"], Pid),
                                 z_session_page:add_script(["$('#chat-list-div').animate({ scrollTop: $('#chat-list-div').attr('scrollHeight') }, 3000);"], Pid)
                         end,
-                    [F(P) || P <- ChatBoxes]
+                    [F(P) || #chat_box{pid=P} <- ChatBoxes]
             end
     end,
     {noreply, State};
@@ -100,23 +106,49 @@ terminate(_Reason, State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-add_chat_box(C=#context{page_pid=Pid}) ->
-    z_notifier:first({add_chat_box, Pid}, C).
+add_chat_box(Context) ->
+    z_notifier:first({add_chat_box, get_chat_box(Context)}, Context).
 
 %% @doc Handle the submit event of a new comment
 event({submit, {newmessage, _Args}, _TriggerId, _TargetId}, Context) ->
-    case z_auth:is_auth(Context) of
-        false ->
-            Name = "anonymous";
-        true ->
-            UserID = z_context:get_session(auth_user_id, Context),
-            Name = m_rsc:p(UserID, name_first, "Anonymous", Context)
-    end,
+    %% case z_auth:is_auth(Context) of
+    %%     false ->
+    %%         Name = "anonymous";
+    %%     true ->
+    %%         UserID = z_context:get_session(auth_user_id, Context),
+    %%         Name = m_rsc:p(UserID, name_first, "Anonymous", Context)
+    %% end,
     Chat = z_context:get_q_validated("chat", Context),
-    z_notifier:notify({chat_done, Chat, Name}, Context).
+    z_notifier:notify({chat_done, Chat}, Context). %, Name}, Context).
 
-%observe_chat_done({chat_done, Chat, Name}, Context) ->
-%    io:format("I observed it~n").
+get_chat_box(Context=#context{page_pid=Pid}) ->
+    Anonymous = io_lib:format("Anonymous (~p)", [Pid]),
+    case z_auth:is_auth(Context) of
+	false ->
+	    Name = Anonymous;
+	true ->
+	    UserID = z_context:get_session(auth_user_id, Context),
+	    Name = m_rsc:p(UserID, name_first, Anonymous, Context)
+    end,
+    #chat_box{pid=Pid, name=Name}.
+
+
+render_userlist_row(Args, ChatBoxes, Ctx) ->
+    ?PRINT(ChatBoxes),
+    case catch z_template:render_to_iolist("_chat_user_row.tpl", Args, Ctx) of
+	{error, Reason} ->
+	    ?DEBUG(Reason),
+	    nop;
+	{Tpl, _TplCtx} ->
+	    F = fun(#chat_box{pid = Pid}) ->
+			z_session_page:add_script([
+						   "$('", z_utils:js_escape(Tpl),
+						   "').appendTo('#chat-list-users');"],
+						  Pid)
+		end,
+	    [ F(Cb) || Cb <- ChatBoxes ]
+    end.
+
 
 init(Args) ->
     process_flag(trap_exit, true),
