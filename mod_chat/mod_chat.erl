@@ -63,9 +63,9 @@ handle_cast({{chat_done, Chat}, Ctx}, State) ->
     case State#state.chat_boxes of
         [] -> nop;
         ChatBoxes ->
-	    z_session_page:add_script(["$('#chat').val(\"\");"], (hd(ChatBoxes))#chat_box.pid),
-	    [Name] = [ X#chat_box.name || X <- ChatBoxes, X#chat_box.pid == Ctx#context.page_pid ],
-            case catch z_template:render_to_iolist("_chat_row.tpl", [{chat, Chat}, {name, Name}], Ctx) of
+	    [ChatBox] = [ X || X <- ChatBoxes, X#chat_box.pid == Ctx#context.page_pid ],
+	    z_session_page:add_script(["$('#chat').val(\"\");"], ChatBox#chat_box.pid),
+            case catch z_template:render_to_iolist("_chat_row.tpl", [{chat, Chat}, {name, ChatBox#chat_box.name}], Ctx) of
                 {error, {template_not_found,"_chat_row.tpl",enoent}} ->
                     % We can get a template_not_found error when the system is still starting.
                     nop;
