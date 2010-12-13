@@ -63,6 +63,7 @@ handle_cast({{chat_done, Chat}, Ctx}, State) ->
     case State#state.chat_boxes of
         [] -> nop;
         ChatBoxes ->
+	    z_session_page:add_script(["$('#chat').val(\"\");"], (hd(ChatBoxes))#chat_box.pid),
 	    [Name] = [ X#chat_box.name || X <- ChatBoxes, X#chat_box.pid == Ctx#context.page_pid ],
             case catch z_template:render_to_iolist("_chat_row.tpl", [{chat, Chat}, {name, Name}], Ctx) of
                 {error, {template_not_found,"_chat_row.tpl",enoent}} ->
@@ -76,7 +77,6 @@ handle_cast({{chat_done, Chat}, Ctx}, State) ->
                                 z_session_page:add_script([
                                     "$('", z_utils:js_escape(Tpl), 
                                     "').appendTo('#chat-list');"], Pid),
-                                z_session_page:add_script(["$('#chat').val(\"\");"], Pid),
                                 z_session_page:add_script(["$('#chat-list-div').animate({ scrollTop: $('#chat-list-div').attr('scrollHeight') }, 3000);"], Pid)
                         end,
                     [F(P) || #chat_box{pid=P} <- ChatBoxes]
