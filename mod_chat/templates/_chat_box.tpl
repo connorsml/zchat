@@ -1,11 +1,11 @@
-<section id="chat-box" style="height: 220px; border: 1px solid blue;">
+<section id="chat-box" style="height: 240px; width: 500px; border: 4px ridge blue;">
 
-   <div id="chat-list-users-div" style="float:right; overflow:scroll;">
-        <ul id="chat-list-users"></ul>
+   <div id="chat-list-users-div" class="zp-40" style="height: 180px; float:right; overflow:scroll; overflow-x: hidden;">
+        <ul id="chat-list-users" style="list-style:none;"></ul>
    </div>
 
-    <div id="chat-list-div" style="height: 180px; border: 1px solid blue; overflow: scroll;">
-        <ul id="chat-list"></ul>
+    <div id="chat-list-div" class="zp-60" style="height: 180px; overflow: scroll; overflow-x: hidden;">
+        <ul id="chat-list" style="list-style:none;"></ul>
     </div>
 
     {% include "_chat_form.tpl" %}
