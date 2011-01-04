@@ -1,1 +1,1 @@
-<li>{{name}}</li>
+<li id="{{upid}}">{{name}}</li>

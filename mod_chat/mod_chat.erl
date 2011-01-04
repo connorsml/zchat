@@ -36,7 +36,7 @@
 
 -include_lib("zotonic.hrl").
 
--record(chat_box, {pid, name}).
+-record(chat_box, {pid, name, room}).
 -record(state, {context, chat_boxes=[]}).
 
 %%====================================================================
@@ -47,23 +47,63 @@
 start_link(Args) when is_list(Args) ->
     gen_server:start_link(?MODULE, Args, []).
 
+check_process_alive(Pid, Context) ->
+    case is_process_alive(Pid) of
+        true ->
+	   true;
+        false ->
+            z_notifier:notify({user_left, Pid}, Context),
+            false
+    end.
+    
+format_pid_for_html(Pid) ->
+    [StringPid] = io_lib:format("~p", [Pid]),
+    StripLeft = string:strip(StringPid, left, $<),
+    StripRight = string:strip(StripLeft,right, $>),
+    [First, Middle, Last] = string:tokens(StripRight, "."),
+
+    string:join(["my", First, Middle, Last, "id"], "-").
+
+
 handle_call({{add_chat_box, ChatBox}, Ctx}, _From, State) ->
     ?PRINT(ChatBox),
-    ChatBoxes = [ X || X <- [ChatBox|State#state.chat_boxes], is_process_alive(X#chat_box.pid)],
+    ChatBoxes = [ X || X <- [ChatBox|State#state.chat_boxes], check_process_alive(X#chat_box.pid, Ctx)],
+    ChatBoxes1 = [ X || X <- ChatBoxes, X#chat_box.room=:=z_context:get_req_path(Ctx)],
     %% add new chat box to all
-    render_userlist_row([{name, ChatBox#chat_box.name}], ChatBoxes, Ctx),
+    render_userlist_row([{name, ChatBox#chat_box.name}, {upid, format_pid_for_html(ChatBox#chat_box.pid)}], ChatBoxes1, Ctx),
     %% add existing chat boxes to new
-    [ render_userlist_row([{name, CBox#chat_box.name}], [ChatBox], Ctx) || CBox <- tl(ChatBoxes) ],
+    [ render_userlist_row([{name, CBox#chat_box.name}, {upid, format_pid_for_html(CBox#chat_box.pid)}], [ChatBox], Ctx) || CBox <- tl(ChatBoxes1) ],
     {reply, ok, State#state{chat_boxes=ChatBoxes}};
 
 handle_call(Message, _From, State) ->
     {stop, {unknown_call, Message}, State}.
 
+handle_cast({{user_left, UserPid}, Ctx}, State) ->
+    case State#state.chat_boxes of
+        [] -> nop,
+              {noreply, State};
+        ChatBoxes ->
+            ChatBoxes1 = [ X || X <- ChatBoxes, X#chat_box.pid =/= UserPid],
+
+	    F = fun(#chat_box{pid = Pid}) ->
+			z_session_page:add_script([
+						   "$('#", format_pid_for_html(UserPid),
+						   "').remove();"],
+						  Pid)
+		end,
+	    [ F(Cb) || Cb <- ChatBoxes1 ],
+            {noreply, State#state{chat_boxes=ChatBoxes1}}
+    end;
+    
+
 handle_cast({{chat_done, Chat}, Ctx}, State) ->
     case State#state.chat_boxes of
-        [] -> nop;
+        [] -> nop,
+            {noreply, State};
         ChatBoxes ->
-	    [ChatBox] = [ X || X <- ChatBoxes, X#chat_box.pid == Ctx#context.page_pid ],
+            ChatBoxes1 = [ X || X <- ChatBoxes, check_process_alive(X#chat_box.pid, Ctx)],
+	    [ChatBox] = [ X || X <- ChatBoxes1, X#chat_box.pid == Ctx#context.page_pid ],
+            ChatBoxes2 = [ X || X <- ChatBoxes1, X#chat_box.room=:=ChatBox#chat_box.room],
 	    z_session_page:add_script(["$('#chat').val(\"\");"], ChatBox#chat_box.pid),
             case catch z_template:render_to_iolist("_chat_row.tpl", [{chat, Chat}, {name, ChatBox#chat_box.name}], Ctx) of
                 {error, {template_not_found,"_chat_row.tpl",enoent}} ->
@@ -79,10 +119,11 @@ handle_cast({{chat_done, Chat}, Ctx}, State) ->
                                     "').appendTo('#chat-list');"], Pid),
                                 z_session_page:add_script(["$('#chat-list-div').animate({ scrollTop: $('#chat-list-div').attr('scrollHeight') }, 3000);"], Pid)
                         end,
-                    [F(P) || #chat_box{pid=P} <- ChatBoxes]
-            end
-    end,
-    {noreply, State};
+                    [F(P) || #chat_box{pid=P} <- ChatBoxes2]
+            end,
+            {noreply, State#state{chat_boxes=ChatBoxes1}}
+    end;
+    
 
 handle_cast(Message, State) ->
     {stop, {unknown_cast, Message}, State}.
@@ -130,7 +171,7 @@ get_chat_box(Context=#context{page_pid=Pid}) ->
 	    UserID = z_context:get_session(auth_user_id, Context),
 	    Name = m_rsc:p(UserID, name_first, Anonymous, Context)
     end,
-    #chat_box{pid=Pid, name=Name}.
+    #chat_box{pid=Pid, name=Name, room=z_context:get_req_path(Context)}.
 
 
 render_userlist_row(Args, ChatBoxes, Ctx) ->
@@ -155,5 +196,6 @@ init(Args) ->
     {context, Context} = proplists:lookup(context, Args),
     z_notifier:observe(add_chat_box, self(), Context),
     z_notifier:observe(chat_done, self(), Context),
+    z_notifier:observe(user_left, self(), Context),
     {ok, #state{context=z_context:new(Context)}}.
     
