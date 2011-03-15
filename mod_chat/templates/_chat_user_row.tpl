@@ -1,1 +1,0 @@
-<li id="{{upid}}">{{name}}</li>
